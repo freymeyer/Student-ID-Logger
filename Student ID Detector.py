@@ -1,52 +1,10 @@
-# Easy Machine Learning & Object Detection with Teachable Machine
-#
-# Michael D'Argenio
-# mjdargen@gmail.com
-# https://dargen.io
-# https://github.com/mjdargen
-# Created: February 6, 2020
-# Last Modified: February 13, 2021
-#
-# This program uses Tensorflow and OpenCV to detect objects in the video
-# captured from your webcam. This program is meant to be used with machine
-# learning models generated with Teachable Machine.
-#
-# Teachable Machine is a great machine learning model trainer and generator
-# created by Google. You can use Teachable Machine to create models to detect
-# objects in images, sounds in audio, or poses in images. For more info, go to:
-# https://teachablemachine.withgoogle.com/
-#
-# For this project, you will be generating a image object detection model. Go
-# to the website, click "Get Started" then go to "Image Project". Follow the
-# steps to create a model. Export the model as a "Tensorflow->Keras" model.
-#
-# To run this code in your environment, you will need to:
-#   * Install Python 3 & library dependencies
-#       * Follow instructions for your setup
-#   * Export your teachable machine tensorflow keras model and unzip it.
-#       * You need both the .h5 file and labels.txt
-#   * Update model_path to point to location of your keras model
-#   * Update labels_path to point to location of your labels.txt
-#   * Adjust width and height of your webcam for your system
-#       * Adjust frameWidth with your video feed width in pixels
-#       * Adjust frameHeight with your video feed height in pixels
-#   * Set your confidence threshold
-#       * conf_threshold by default is 90
-#   * If video does not show up properly, use the matplotlib implementation
-#       * Uncomment "import matplotlib...."
-#       * Comment out "cv2.imshow" and "cv2.waitKey" lines
-#       * Uncomment plt lines of code below
-#   * Run "python3 tm_obj_det.py"
-
 import multiprocessing
 import numpy as np
 import cv2
 import tensorflow.keras as tf
 import pyttsx3
-import math
 import os
-# use matplotlib if cv2.imshow() doesn't work
-import matplotlib.pyplot as plt
+
 
 DIR_PATH = os.path.dirname(os.path.realpath(__file__))
 
@@ -80,7 +38,7 @@ def speak(speakQ, ):
 def main():
 
     # read .txt file to get labels
-    labels_path = f"{DIR_PATH}/la_croix_model/labels.txt"
+    labels_path = f"{DIR_PATH}/Model/labels.txt"
     # open input file label.txt
     labelsfile = open(labels_path, 'r')
 
@@ -95,7 +53,7 @@ def main():
     labelsfile.close()
 
     # load the teachable machine model
-    model_path = f"{DIR_PATH}/la_croix_model/keras_model.h5"
+    model_path = f"{DIR_PATH}/Model/keras_model.h5"
     model = tf.models.load_model(model_path, compile=False)
 
     # initialize webcam video object
@@ -162,7 +120,7 @@ def main():
 
 
         # Draw the contour on the original frame
-        cv2.drawContours(frame, [approx], -1, (0, 255, 0), 2)
+            cv2.drawContours(frame, [approx], -1, (0, 255, 0), 2)
         # crop to square for use with TM model
         margin = int(((frameWidth-frameHeight)/2))
         square_frame = frame[0:frameHeight, margin:margin + frameHeight]
@@ -186,71 +144,27 @@ def main():
         confidence = []
         conf_label = ""
         threshold_class = ""
-        # create blach border at bottom for labels
-        per_line = 5  # number of classes per line of text
-        bordered_frame = cv2.copyMakeBorder(
-            square_frame,
-            top=0,
-            bottom=30 + 15*math.ceil(len(classes)/per_line),
-            left=0,
-            right=0,
-            borderType=cv2.BORDER_CONSTANT,
-            value=[0, 0, 0]
-        )
+        
         # for each one of the classes
         for i in range(0, len(classes)):
-            # scale prediction confidence to % and apppend to 1-D list
+            # scale prediction confidence to %
             confidence.append(int(predictions[0][i]*100))
-            # put text per line based on number of classes per line
-            if (i != 0 and not i % per_line):
-                cv2.putText(
-                    img=bordered_frame,
-                    text=conf_label,
-                    org=(int(0), int(frameHeight+25+15*math.ceil(i/per_line))),
-                    fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-                    fontScale=0.5,
-                    color=(255, 255, 255)
-                )
-                conf_label = ""
             # append classes and confidences to text for label
             conf_label += classes[i] + ": " + str(confidence[i]) + "%; "
+            print(conf_label)
             # prints last line
             if (i == (len(classes)-1)):
-                cv2.putText(
-                    img=bordered_frame,
-                    text=conf_label,
-                    org=(int(0), int(frameHeight+25+15*math.ceil((i+1)/per_line))),
-                    fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-                    fontScale=0.5,
-                    color=(255, 255, 255)
-                )
                 conf_label = ""
             # if above confidence threshold, send to queue
             if confidence[i] > conf_threshold:
                 speakQ.put(classes[i])
                 threshold_class = classes[i]
-                print(conf_label)
-        # add label class above confidence threshold
-        cv2.putText(
-            img=bordered_frame,
-            text=threshold_class,
-            org=(int(0), int(frameHeight+20)),
-            fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-            fontScale=0.75,
-            color=(255, 255, 255)
-        )
+                
+
 
         # original video feed implementation
-        cv2.imshow("Capturing", bordered_frame)
+        cv2.imshow("Capturing", frame)
         cv2.waitKey(10)
-
-        # # if the above implementation doesn't work properly
-        # # comment out two lines above and use the lines below
-        # # will also need to import matplotlib at the top
-        #plt_frame = cv2.cvtColor(bordered_frame, cv2.COLOR_BGR2RGB)
-        #plt.imshow(plt_frame)
-        #plt.draw()
-        #plt.pause(.001)
 
     # terminate process 1
     p1.terminate()
