@@ -1,44 +1,20 @@
-import multiprocessing
+
 import numpy as np
 import cv2
-import tensorflow.keras as tf
-import pyttsx3
+import tensorflow.keras as tf # type: ignore
 import os
 import pytesseract
-from PIL import ImageGrab, Image
 import re
+import sqlite3
+from tkinter import *
+from PIL import Image, ImageTk
 
 # pip install tensorflow
 
 pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 DIR_PATH = os.path.dirname(os.path.realpath(__file__))
 
-# this process is purely for text-to-speech so it doesn't hang processor
-def speak(speakQ, ):
-    # initialize text-to-speech object
-    engine = pyttsx3.init()
-    # can adjust volume if you'd like
-    volume = engine.getProperty('volume')
-    engine.setProperty('volume', volume)  # add number here
-    # initialize last_msg to be empty
-    last_msg = ""
-    # keeps program running forever until ctrl+c or window is closed
-    while True:
-        msg = speakQ.get()
-        # clear out msg queue to get most recent msg
-        while not speakQ.empty():
-            msg = speakQ.get()
-        # if most recent msg is different from previous msg
-        # and if it's not "Background"
-        if msg != last_msg and msg != "Background":
-            last_msg = msg
-            # text-to-speech say class name from labels.txt
-            engine.say(msg)
-            engine.runAndWait()
-        if msg == "Background":
-            last_msg = ""
-
-
+conn = sqlite3.connect("logging.db")
 
 def main():
 
@@ -79,18 +55,11 @@ def main():
     # enable auto gain
     cap.set(cv2.CAP_PROP_GAIN, 0)
 
-    # creating a queue to share data to speech process
-    speakQ = multiprocessing.Queue()
-
-    # creating speech process to not hang processor
-    p1 = multiprocessing.Process(target=speak, args=(speakQ, ), daemon="True")
-
-    # starting process 1 - speech
-    p1.start()
+ 
 
     # keeps program running forever until ctrl+c or window is closed
     while True:
-
+        
         # disable scientific notation for clarity
         np.set_printoptions(suppress=True)
 
@@ -113,6 +82,12 @@ def main():
         dilation = cv2.dilate(thresh1, rect_kernel, iterations = 1)
         contours, hierarchy = cv2.findContours(dilation, cv2.RETR_EXTERNAL, 
                                                  cv2.CHAIN_APPROX_NONE)
+        d = pytesseract.image_to_data(frame, output_type=pytesseract.Output.DICT)
+        n_boxes = len(d['text'])
+        for i in range(n_boxes):
+            if int(d['conf'][i]) > 0:
+                (x, y, w, h) = (d['left'][i], d['top'][i], d['width'][i], d['height'][i])
+                frame = cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
 
         # turn the image into a numpy array
         image_array = np.asarray(model_img)
@@ -128,8 +103,6 @@ def main():
         conf_threshold = 90
         confidence = []
         conf_label = ""
-        threshold_class = ""
-        
         # for each one of the classes
         for i in range(0, len(classes)):
             # scale prediction confidence to %
@@ -137,38 +110,23 @@ def main():
             # append classes and confidences to text for label
             conf_label += classes[i] + ": " + str(confidence[i]) + "%; "
             print(conf_label)
-            if confidence[0] >= 99:
-                
-                cv2.imwrite("images/c1.png", thresh1)
-
-                text = pytesseract.image_to_string(Image.open("images/c1.png"))
+            if confidence[0] >= conf_threshold:
+            
+                text = pytesseract.image_to_string(thresh1)
                 id_pattern = r"\d{4}-\d{4}"
                 matches = re.findall(id_pattern, text)
 
                 if matches:
-                    
                     print(matches[0])
-                    speakQ.put(matches[0])
-
-
-            
-
+        
             if (i == (len(classes)-1)):
                 conf_label = ""
-            # if above confidence threshold, send to queue
-            if confidence[i] > conf_threshold:
-                speakQ.put(classes[i])
-                threshold_class = classes[i]
     
         
-                
-
-
         # original video feed implementation
-        cv2.imshow("Capturing", frame)
-
+        cv2.imshow("Capturing", thresh1)
         cv2.waitKey(10)
-        
+         
         
         
 
@@ -178,3 +136,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+    
+    
