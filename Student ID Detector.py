@@ -4,10 +4,14 @@ import cv2
 import tensorflow.keras as tf
 import pyttsx3
 import os
+import pytesseract
+from PIL import ImageGrab, Image
+import re
 
+# pip install tensorflow
 
+pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 DIR_PATH = os.path.dirname(os.path.realpath(__file__))
-
 
 # this process is purely for text-to-speech so it doesn't hang processor
 def speak(speakQ, ):
@@ -35,6 +39,7 @@ def speak(speakQ, ):
             last_msg = ""
 
 
+
 def main():
 
     # read .txt file to get labels
@@ -58,6 +63,10 @@ def main():
 
     # initialize webcam video object
     cap = cv2.VideoCapture(0)
+
+    cap2 = cv2.VideoCapture(0)
+    cap2.set(3,640)
+    cap2.set(4,480)
 
     # width & height of webcam video in pixels -> adjust to your size
     # adjust values if you see black bars on the sides of capture window
@@ -91,36 +100,6 @@ def main():
 
         ret, frame = cap.read()
 
-        # Convert the frame to grayscale
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
-        # Apply GaussianBlur to reduce noise and help contour detection
-        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-
-        # Use Canny edge detection to find edges in the image
-        edges = cv2.Canny(blurred, 50, 100)
-
-        # Find contours in the edged image
-        contours, _ = cv2.findContours(edges.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-        # Iterate over the contours
-        for contour in contours:
-            # Approximate the shape
-            epsilon = 0.08 * cv2.arcLength(contour, True)
-            approx = cv2.approxPolyDP(contour, epsilon, True)
-
-            # Check if the contour has four corners and a specific aspect ratio (vertical rectangle)
-            if len(approx) == 4:
-                x, y, w, h = cv2.boundingRect(approx)
-                aspect_ratio = w / float(h)
-                if 0.8 <= aspect_ratio <= 1.2:  # Adjust the aspect ratio range as needed
-                    # Draw the contour on the original frame
-                    cv2.drawContours(frame, [approx], -1, (0, 255, 0), 2)
-                    break  # Break the loop after finding the first suitable rectangle
-
-
-        # Draw the contour on the original frame
-            cv2.drawContours(frame, [approx], -1, (0, 255, 0), 2)
         # crop to square for use with TM model
         margin = int(((frameWidth-frameHeight)/2))
         square_frame = frame[0:frameHeight, margin:margin + frameHeight]
@@ -128,6 +107,12 @@ def main():
         resized_img = cv2.resize(square_frame, (224, 224))
         # convert image color to go to model
         model_img = cv2.cvtColor(resized_img, cv2.COLOR_BGR2RGB)
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        rect_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (18, 18))
+        ret, thresh1 = cv2.threshold(gray, 0, 255, cv2.THRESH_OTSU | cv2.THRESH_BINARY_INV)
+        dilation = cv2.dilate(thresh1, rect_kernel, iterations = 1)
+        contours, hierarchy = cv2.findContours(dilation, cv2.RETR_EXTERNAL, 
+                                                 cv2.CHAIN_APPROX_NONE)
 
         # turn the image into a numpy array
         image_array = np.asarray(model_img)
@@ -135,7 +120,7 @@ def main():
         normalized_image_array = (image_array.astype(np.float32) / 127.0) - 1
         # load the image into the array
         data[0] = normalized_image_array
-
+        
         # run the prediction
         predictions = model.predict(data)
 
@@ -152,19 +137,40 @@ def main():
             # append classes and confidences to text for label
             conf_label += classes[i] + ": " + str(confidence[i]) + "%; "
             print(conf_label)
-            # prints last line
+            if confidence[0] >= 99:
+                
+                cv2.imwrite("images/c1.png", thresh1)
+
+                text = pytesseract.image_to_string(Image.open("images/c1.png"))
+                id_pattern = r"\d{4}-\d{4}"
+                matches = re.findall(id_pattern, text)
+
+                if matches:
+                    
+                    print(matches[0])
+                    speakQ.put(matches[0])
+
+
+            
+
             if (i == (len(classes)-1)):
                 conf_label = ""
             # if above confidence threshold, send to queue
             if confidence[i] > conf_threshold:
                 speakQ.put(classes[i])
                 threshold_class = classes[i]
+    
+        
                 
 
 
         # original video feed implementation
         cv2.imshow("Capturing", frame)
+
         cv2.waitKey(10)
+        
+        
+        
 
     # terminate process 1
     p1.terminate()
