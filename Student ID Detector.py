@@ -6,6 +6,7 @@ import os
 import pytesseract
 import re
 import sqlite3
+import datetime
 from tkinter import *
 from PIL import Image, ImageTk
 
@@ -15,6 +16,57 @@ pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tessera
 DIR_PATH = os.path.dirname(os.path.realpath(__file__))
 
 conn = sqlite3.connect("logging.db")
+
+
+def validate_student_id(student_id):
+    cursor = conn.cursor()
+
+    # Check if entire ID exists in the database (assuming 'student_id' column stores full ID)
+    cursor.execute("SELECT id FROM student_info WHERE student_id = ?", (student_id,))
+    result = cursor.fetchone()
+
+    if result:  # If student ID is found
+        return student_id, f"Student {result[0]}"  # Example name generation using student ID
+    else:
+        return None
+
+def log_student_entry(student_id):
+    today = datetime.date.today()
+    now = datetime.datetime.now()
+    now_str = now.strftime("%H:%M:%S")
+    cursor = conn.cursor()
+
+    
+
+    # Check last logged at time for student
+    cursor.execute("SELECT last_logged_at FROM student_info WHERE student_id = ?", (student_id,))
+    last_logged_at = cursor.fetchone()
+    cooldown_period = 5  # Adjust cooldown period in seconds
+    last_logged_at_seconds = last_logged_at[0]
+    if last_logged_at:
+        last_logged_at_seconds = last_logged_at[0]
+        if last_logged_at_seconds:
+                
+            # Convert last_logged_at to actual seconds since epoch
+            t1 = datetime.datetime.strptime(now_str, "%H:%M:%S")
+            t2 = datetime.datetime.strptime(last_logged_at_seconds, "%H:%M:%S")
+
+            time_diff = t1 - t2 
+            # Adjust cooldown period to seconds as well
+            if time_diff.total_seconds() < cooldown_period:
+                print(f"Cooldown active for student {student_id}. Skipping entry.")
+                return  # Exit function if cooldown is active
+
+            
+
+    # Proceed with logging if cooldown is not active
+    
+    cursor.execute("INSERT INTO logs (student_id, date, time) VALUES (?, ?, ?)", (student_id, today, now_str))
+    cursor.execute("UPDATE student_info SET last_logged_at = ? WHERE student_id = ?", (now_str, student_id))
+    conn.commit()
+    print(f"Student {student_id} logged in successfully!")
+
+
 
 def main():
 
@@ -76,6 +128,8 @@ def main():
         resized_img = cv2.resize(square_frame, (224, 224))
         # convert image color to go to model
         model_img = cv2.cvtColor(resized_img, cv2.COLOR_BGR2RGB)
+
+
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         rect_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (18, 18))
         ret, thresh1 = cv2.threshold(gray, 0, 255, cv2.THRESH_OTSU | cv2.THRESH_BINARY_INV)
@@ -118,6 +172,16 @@ def main():
 
                 if matches:
                     print(matches[0])
+                    student_id = matches[0]
+                    student_info = validate_student_id(student_id)  # Call validation to check student number
+
+                    if student_info:  # If student number is valid
+                        student_num, name = student_info
+                        log_student_entry(student_num)  # Log entry using student ID
+
+                    else:
+                        print("Invalid student ID!")
+
         
             if (i == (len(classes)-1)):
                 conf_label = ""
